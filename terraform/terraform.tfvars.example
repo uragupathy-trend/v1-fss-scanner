@@ -1,0 +1,55 @@
+# OCI Provider Configuration
+# Copy this file to terraform.tfvars and fill in your actual values
+
+# OCI Authentication
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaaaaaa..."
+user_ocid        = "ocid1.user.oc1..aaaaaaaa..."
+fingerprint      = "aa:bb:cc:dd:ee:ff:gg:hh:ii:jj:kk:ll:mm:nn:oo:pp"
+private_key_path = "~/.oci/oci_api_key.pem"
+region           = "ap-sydney-1"
+
+# Compartment and Network
+compartment_id = "ocid1.compartment.oc1..aaaaaaaa..."
+vcn_id         = "ocid1.vcn.oc1.ap-sydney-1.aaaaaaaa..."
+subnet_id      = "ocid1.subnet.oc1.ap-sydney-1.aaaaaaaa..."
+
+# Existing Bucket Names
+source_bucket_name      = "v1-fss-source-bucket"
+production_bucket_name  = "v1-fss-prod-bucket"
+quarantine_bucket_name  = "v1-fss-quarantine-bucket"
+
+# Vision One Configuration
+# Choose ONE of the following options:
+
+# Option 1: Using OCI Vault (Recommended for Production)
+use_vault = true
+vision_one_api_key_secret_ocid = "ocid1.vaultsecret.oc1.ap-sydney-1.aaaaaaaa..."
+vision_one_region = "ap-southeast-2"
+v1_scanner_endpoint = "https://api.xdr.trendmicro.com"
+
+# Option 2: Direct API Key (Development/Testing Only)
+# use_vault = false
+# vision_one_api_key = "your-vision-one-api-key-here"
+# vision_one_region = "ap-southeast-2"
+# v1_scanner_endpoint = "https://api.xdr.trendmicro.com"
+
+# Function Configuration
+ocir_repo_name = "syd.ocir.io/your-tenancy-namespace/v1-fss-scanner"
+
+# Docker/OCIR Configuration
+docker_username = "your-tenancy-namespace/your-oci-username"
+docker_auth_token = "your-oci-auth-token"
+ocir_region = "syd.ocir.io"
+image_tag = "latest"
+tenancy_namespace = "your-tenancy-namespace"
+
+# Function Context Configuration
+fn_context_name = "v1-fss-context"
+environment    = "dev"
+
+# Logging Configuration (set to false if you don't have logging permissions)
+enable_logging = false
+
+# Optional: Function Resource Configuration
+function_memory_mb       = 512
+function_timeout_seconds = 300

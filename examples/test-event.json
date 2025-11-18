@@ -1,0 +1,26 @@
+{
+  "eventType": "com.oraclecloud.objectstorage.object.create",
+  "cloudEventsVersion": "0.1",
+  "eventTypeVersion": "2.0",
+  "source": "ObjectStorage",
+  "eventTime": "2025-01-07T10:15:00.000Z",
+  "contentType": "application/json",
+  "data": {
+    "compartmentId": "ocid1.compartment.oc1..aaaaaaaa...",
+    "compartmentName": "test-compartment",
+    "resourceName": "test-file.txt",
+    "resourceId": "/n/namespace/b/bucket/o/test-file.txt",
+    "availabilityDomain": "ap-sydney-1-AD-1",
+    "additionalDetails": {
+      "bucketName": "v1-fss-source-bucket",
+      "namespace": "test-namespace",
+      "eTag": "\"d41d8cd98f00b204e9800998ecf8427e\"",
+      "archivalState": "Available",
+      "timeCreated": "2025-01-07T10:15:00.000Z"
+    }
+  },
+  "eventID": "unique-event-id-12345",
+  "extensions": {
+    "compartmentId": "ocid1.compartment.oc1..aaaaaaaa..."
+  }
+}
