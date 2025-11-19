@@ -64,6 +64,9 @@ Setup OCI Vault to store Vision One API Key credentials:
 
 4. **Note the Secret OCID** for use in terraform.tfvars
 
+5. **Emit object events is enabled for the bucket to be scanned**
+### Go to the bucket details enable Emit object events if it disabled
+
 ## Quick Start
 
 ### 1. Configure Terraform Variables
