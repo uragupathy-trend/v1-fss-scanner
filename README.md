@@ -14,14 +14,14 @@ flowchart LR
     F --> G[Production Bucket]
     F --> H[Quarantine Bucket]
     
-    style A fill:#ffffff,stroke:#333,stroke-width:4px,color:#000
-    style B fill:#ffffff,stroke:#0277bd,stroke-width:4px,color:#000
-    style C fill:#ffffff,stroke:#f57c00,stroke-width:4px,color:#000
-    style D fill:#ffffff,stroke:#f57c00,stroke-width:4px,color:#000
-    style E fill:#ffffff,stroke:#7b1fa2,stroke-width:4px,color:#000
-    style F fill:#ffffff,stroke:#f9a825,stroke-width:4px,color:#000
-    style G fill:#ffffff,stroke:#388e3c,stroke-width:4px,color:#000
-    style H fill:#ffffff,stroke:#d32f2f,stroke-width:4px,color:#000
+    style A fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style B fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style C fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style D fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style E fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style F fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style G fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style H fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
 ```
 
 **Components:**
