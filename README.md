@@ -4,12 +4,33 @@ Automated file security scanning solution for Oracle Cloud Infrastructure (OCI) 
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    A[User Uploads File] --> B[Source Bucket]
+    B --> C[OCI Event Rule]
+    C --> D[OCI Function]
+    D --> E[Vision One API]
+    E --> F[Scan Result]
+    F --> G[Production Bucket]
+    F --> H[Quarantine Bucket]
+    
+    style A fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style B fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    style C fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style D fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style E fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style F fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style G fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    style H fill:#ffebee,stroke:#d32f2f,stroke-width:2px
 ```
-Source Bucket → OCI Event Rule → OCI Function → Vision One API
-                                      ↓
-                            Clean Files → Production Bucket
-                            Malware → Quarantine Bucket
-```
+
+**Components:**
+- **Source Bucket**: Files uploaded here trigger automatic scanning
+- **OCI Event Rule**: Detects file uploads and triggers the function
+- **OCI Function**: Downloads, scans, and routes files based on results
+- **Vision One API**: Performs malware scanning using advanced threat detection
+- **Production Bucket**: Clean files are moved here with scan metadata
+- **Quarantine Bucket**: Files with malware are isolated here
 
 ## Prerequisites
 
@@ -100,6 +121,7 @@ quarantine_bucket_name  = "your-quarantine-bucket"
 # Vision One Configuration (using OCI Vault)
 vision_one_api_key_secret_ocid = "ocid1.vaultsecret.oc1.ap-sydney-1.aaaaaaaa..."
 vision_one_region = "ap-southeast-2"
+v1_scanner_endpoint = "<scanner-endpoint>:50051"
 
 # Docker/OCIR Configuration
 docker_username = "your-tenancy-namespace/your-username"
@@ -109,17 +131,40 @@ ocir_region = "syd.ocir.io"
 
 ### 2. Deploy
 
+The deployment script has been optimized for ease of use with enhanced safety features:
+
 ```bash
-chmod +x deploy.sh
+# Deploy infrastructure (default operation)
 ./deploy.sh
+
+# Or explicitly specify deploy
+./deploy.sh deploy
 ```
 
-The deployment script will:
-- Check prerequisites (Terraform, Docker, OCI CLI)
-- Validate Terraform configuration
-- Build and push Docker image to OCIR
-- Deploy all infrastructure with Terraform
-- Provide deployment summary
+### 3. Manage Infrastructure
+
+```bash
+# Deploy infrastructure
+./deploy.sh deploy
+
+# Destroy infrastructure with safety confirmations
+./deploy.sh destroy
+
+# Destroy infrastructure without prompts (automated)
+./deploy.sh destroy --force
+
+# Get help
+./deploy.sh help
+```
+
+The deployment script automatically:
+- ✅ Checks prerequisites (Terraform, Docker, OCI CLI)
+- ✅ Validates Docker daemon is running
+- ✅ Verifies Terraform configuration exists
+- ✅ Warns about placeholder values in configuration
+- ✅ Provides colored output for better visibility
+- ✅ Shows deployment summary with resource details
+- ✅ Includes safety confirmations for destroy operations
 
 ## What Gets Created
 
@@ -176,15 +221,25 @@ Files are automatically tagged with scan results:
 4. Verify file movement to production or quarantine bucket
 5. Check file metadata tags for scan results
 
+### Test with Sample Event
+
+A sample event file is provided in the `examples/` directory for local testing:
+
+```bash
+# Test function locally (if configured)
+cd function
+python3 test-function.py
+```
+
 ## Troubleshooting
 
 ### Common Issues
 
 **Deployment Failures**
-- Verify Terraform, Docker, and OCI CLI are installed
-- Check OCI CLI configuration: `oci setup config`
-- Ensure Docker daemon is running: `docker info`
-- Verify terraform.tfvars is properly configured with your values
+- ✅ Run `./deploy.sh` to automatically check prerequisites
+- ✅ Script validates Terraform, Docker, and OCI CLI are installed
+- ✅ Script checks Docker daemon status
+- ✅ Warnings shown for placeholder values in terraform.tfvars
 
 **Function Not Triggering**
 - Check event rule is enabled in OCI Console
@@ -196,6 +251,20 @@ Files are automatically tagged with scan results:
 - Check Vision One region configuration
 - Ensure network connectivity to Vision One API
 
+### Deployment Summary
+
+After successful deployment, the script provides a summary showing:
+```
+Deployment Summary:
+==========================
+Function App: ocid1.fnapp.oc1...
+Function ID: ocid1.fn.oc1...
+Event Rule: ocid1.rule.oc1...
+OCIR Repo: syd.ocir.io/namespace/v1-fss-scanner
+==========================
+Deployment complete! Upload a file to test the scanner.
+```
+
 ### Monitoring
 
 View function logs in OCI Console:
@@ -204,14 +273,25 @@ View function logs in OCI Console:
 3. Select **v1-fss-scanner**
 4. Click **Logs** tab
 
-### Cleanup
+### Infrastructure Management
 
-To remove all deployed resources:
-
+**Deploy Infrastructure:**
 ```bash
-cd terraform
-terraform destroy
+./deploy.sh deploy  # or just ./deploy.sh
 ```
+
+**Destroy Infrastructure:**
+```bash
+# With safety prompts
+./deploy.sh destroy
+
+# Without prompts (for automation)
+./deploy.sh destroy --force
+```
+
+The destroy operation includes safety confirmations:
+1. First confirmation: Type `yes` to continue
+2. Final confirmation: Type `DELETE` to confirm destruction
 
 ## Configuration
 
@@ -240,6 +320,29 @@ The function uses these environment variables (automatically configured):
 - IAM policies follow least-privilege access principles
 - All operations logged for audit trails
 - Container images stored in private OCIR repository
+- Safety confirmations prevent accidental infrastructure destruction
+
+## Script Features
+
+The optimized `deploy.sh` script provides:
+
+### ✅ Enhanced Safety
+- Prerequisites validation before execution
+- Double confirmation for destroy operations
+- Force mode for automated destruction
+- Colored output for better visibility
+
+### ✅ Improved Usability
+- Default deploy operation (no arguments needed)
+- Clear help documentation
+- Deployment summary with resource details
+- Error handling with descriptive messages
+
+### ✅ Better Operations
+- Automatic terraform plan generation
+- Clean temporary file management
+- Interrupt signal handling
+- Configuration validation warnings
 
 ---
 
