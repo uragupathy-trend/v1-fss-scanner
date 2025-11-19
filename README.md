@@ -66,7 +66,7 @@ Setup OCI Vault to store Vision One API Key credentials:
 
 5. **Emit object events is enabled for the bucket to be scanned**
 
-   Go to the bucket details enable Emit object events if it disabled
+   Go to the bucket details enable Emit object events if it is disabled
 
 ## Quick Start
 
