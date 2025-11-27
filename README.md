@@ -10,27 +10,33 @@ flowchart LR
     B --> C[OCI Event Rule]
     C --> D[OCI Function]
     D --> E[Vision One API]
-    E --> F[Scan Result]
-    F --> G[Production Bucket]
-    F --> H[Quarantine Bucket]
+    E --> F{Scanner Mode}
+    F -->|MOVE_ALL| G[Production Bucket]
+    F -->|MOVE_ALL| H[Quarantine Bucket]
+    F -->|MOVE_MALWARE_ONLY| I[Keep Clean in Source]
+    F -->|MOVE_MALWARE_ONLY| H
+    F -->|TAG_ONLY| J[Tag Files in Source]
     
     style A fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
     style B fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
     style C fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
     style D fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
     style E fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
-    style F fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
-    style G fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
-    style H fill:#000000,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style F fill:#ff6b6b,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style G fill:#51cf66,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style H fill:#ffd43b,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style I fill:#74c0fc,stroke:#ffffff,stroke-width:4px,color:#ffffff
+    style J fill:#d0bfff,stroke:#ffffff,stroke-width:4px,color:#ffffff
 ```
 
 **Components:**
 - **Source Bucket**: Files uploaded here trigger automatic scanning
 - **OCI Event Rule**: Detects file uploads and triggers the function
-- **OCI Function**: Downloads, scans, and routes files based on results
+- **OCI Function**: Downloads, scans, and routes files based on scanner mode
 - **Vision One API**: Performs malware scanning using advanced threat detection
-- **Production Bucket**: Clean files are moved here with scan metadata
-- **Quarantine Bucket**: Files with malware are isolated here
+- **Scanner Mode**: Configurable behavior for file processing (MOVE_ALL, MOVE_MALWARE_ONLY, TAG_ONLY)
+- **Production Bucket**: Clean files destination (MOVE_ALL mode only)
+- **Quarantine Bucket**: Malware files isolation (MOVE_ALL and MOVE_MALWARE_ONLY modes)
 
 ## Prerequisites
 
@@ -43,10 +49,12 @@ flowchart LR
 - OCI Tenancy with appropriate permissions
 - Compartment for deploying resources
 - VCN with subnet for function deployment
-- Three existing Object Storage buckets:
-  - Source bucket (where files are uploaded)
-  - Production bucket (for clean files)
-  - Quarantine bucket (for files with malware)
+- Object Storage buckets (requirements vary by scanner mode):
+  - **Source bucket** (required for all modes): Where files are uploaded
+  - **Production bucket** (required for MOVE_ALL mode): For clean files
+  - **Quarantine bucket** (required for MOVE_ALL and MOVE_MALWARE_ONLY modes): For files with malware
+
+**Note**: Bucket requirements depend on your chosen scanner mode. See Scanner Modes section for details.
 
 ### Vision One Requirements
 - Trend Micro Vision One account
@@ -123,11 +131,34 @@ vision_one_api_key_secret_ocid = "ocid1.vaultsecret.oc1.ap-sydney-1.aaaaaaaa..."
 vision_one_region = "ap-southeast-2"
 v1_scanner_endpoint = "<scanner-endpoint>:50051"
 
+# Scanner Mode Configuration
+v1_file_scanner_mode = "MOVE_ALL"  # Options: MOVE_ALL, MOVE_MALWARE_ONLY, TAG_ONLY
+
 # Docker/OCIR Configuration
 docker_username = "your-tenancy-namespace/your-username"
 docker_auth_token = "your-oci-auth-token"
 ocir_region = "syd.ocir.io"
 ```
+
+## Scanner Modes
+
+The scanner supports three operating modes to control how files are processed after scanning:
+
+### MOVE_ALL (Default)
+- **Clean files**: Moved to production bucket
+- **Infected files**: Moved to quarantine bucket
+- **Best for**: Production environments requiring complete file separation
+
+### MOVE_MALWARE_ONLY
+- **Clean files**: Remain in source bucket with scan metadata
+- **Infected files**: Moved to quarantine bucket
+- **Best for**: Development environments and cost optimization
+
+### TAG_ONLY
+- **All files**: Remain in source bucket with scan metadata
+- **Best for**: Audit scenarios and external security tool integration
+
+**Configuration**: Set `v1_file_scanner_mode` in terraform.tfvars to your preferred mode.
 
 ### 2. Deploy
 
@@ -181,10 +212,13 @@ The deployment script automatically:
 2. **Event Trigger** → OCI Events detects upload and triggers function
 3. **File Download** → Function downloads file to temporary storage
 4. **Malware Scan** → File scanned using Vision One File Security SDK
-5. **Result Processing** → Based on scan results:
-   - **Clean files** → Moved to production bucket with metadata tags
-   - **Malware detected** → Moved to quarantine bucket with metadata tags
+5. **Result Processing** → Based on scanner mode and scan results:
+   - **MOVE_ALL mode**: Clean files → production bucket, malware → quarantine bucket
+   - **MOVE_MALWARE_ONLY mode**: Clean files → remain in source bucket, malware → quarantine bucket  
+   - **TAG_ONLY mode**: All files → remain in source bucket with scan result tags
 6. **Cleanup** → Temporary files cleaned up automatically
+
+All files receive metadata tags with scan results regardless of the scanner mode selected.
 
 ## File Tagging
 

@@ -21,6 +21,42 @@ data "oci_objectstorage_namespace" "ns" {
   compartment_id = var.compartment_id
 }
 
+# Bucket validation logic
+locals {
+  # Check if required buckets are provided based on scanner mode
+  production_bucket_required = var.v1_file_scanner_mode == "MOVE_ALL"
+  quarantine_bucket_required = contains(["MOVE_ALL", "MOVE_MALWARE_ONLY"], var.v1_file_scanner_mode)
+  
+  # Validation checks
+  production_bucket_valid = local.production_bucket_required ? var.production_bucket_name != "" : true
+  quarantine_bucket_valid = local.quarantine_bucket_required ? var.quarantine_bucket_name != "" : true
+  
+  # Error messages for validation failures
+  validation_errors = compact([
+    !local.production_bucket_valid ? "Production bucket name is required when v1_file_scanner_mode is 'MOVE_ALL'" : "",
+    !local.quarantine_bucket_valid ? "Quarantine bucket name is required when v1_file_scanner_mode is 'MOVE_ALL' or 'MOVE_MALWARE_ONLY'" : ""
+  ])
+}
+
+# Validation check - this will cause terraform to fail if buckets are missing
+data "external" "bucket_validation" {
+  count = length(local.validation_errors) > 0 ? 1 : 0
+  program = ["echo", jsonencode({
+    error = join("; ", local.validation_errors)
+  })]
+}
+
+# This resource will fail if validation errors exist
+resource "null_resource" "bucket_validation_check" {
+  count = length(local.validation_errors) > 0 ? 1 : 0
+  
+  provisioner "local-exec" {
+    command = "echo 'Validation Error: ${join("; ", local.validation_errors)}' && exit 1"
+  }
+  
+  depends_on = [data.external.bucket_validation]
+}
+
 # Dynamic Group for Function
 resource "oci_identity_dynamic_group" "v1_fss_function_dynamic_group" {
   compartment_id = var.tenancy_ocid
@@ -97,14 +133,23 @@ resource "oci_functions_application" "v1_fss_application" {
   # Use x86_64 shape to match Docker image architecture
   shape = "GENERIC_X86"
   
-  config = {
-    SOURCE_BUCKET_NAME           = var.source_bucket_name
-    PRODUCTION_BUCKET_NAME       = var.production_bucket_name
-    QUARANTINE_BUCKET_NAME       = var.quarantine_bucket_name
-    V1_REGION                    = var.vision_one_region
-    V1_SCANNER_ENDPOINT          = var.v1_scanner_endpoint
-    VAULT_SECRET_OCID            = var.vision_one_api_key_secret_ocid
-  }
+  config = merge(
+    {
+      SOURCE_BUCKET_NAME           = var.source_bucket_name
+      V1_REGION                    = var.vision_one_region
+      V1_SCANNER_ENDPOINT          = var.v1_scanner_endpoint
+      VAULT_SECRET_OCID            = var.vision_one_api_key_secret_ocid
+      V1_FILE_SCANNER_MODE         = var.v1_file_scanner_mode
+    },
+    # Conditionally add production bucket if required
+    var.v1_file_scanner_mode == "MOVE_ALL" ? {
+      PRODUCTION_BUCKET_NAME = var.production_bucket_name
+    } : {},
+    # Conditionally add quarantine bucket if required
+    contains(["MOVE_ALL", "MOVE_MALWARE_ONLY"], var.v1_file_scanner_mode) ? {
+      QUARANTINE_BUCKET_NAME = var.quarantine_bucket_name
+    } : {}
+  )
 
   freeform_tags = {
     "Project" = "VisionOneFileSecurity"

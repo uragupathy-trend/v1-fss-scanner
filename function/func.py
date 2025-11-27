@@ -164,13 +164,12 @@ def get_configuration() -> Dict[str, str]:
     # Initialize OCI signer for vault access
     signer = oci.auth.signers.get_resource_principals_signer()
     
-    # Standard environment variables (non-sensitive)
-    standard_vars = [
+    # Always required variables
+    required_vars = [
         'SOURCE_BUCKET_NAME',
-        'PRODUCTION_BUCKET_NAME', 
-        'QUARANTINE_BUCKET_NAME',
         'V1_REGION',
-        'V1_SCANNER_ENDPOINT'
+        'V1_SCANNER_ENDPOINT',
+        'V1_FILE_SCANNER_MODE'
     ]
     
     # Vault-based variables (sensitive)
@@ -180,12 +179,51 @@ def get_configuration() -> Dict[str, str]:
     
     config = {}
     
-    # Get standard configuration from environment variables
-    for var in standard_vars:
+    # Get required configuration from environment variables
+    for var in required_vars:
         value = os.environ.get(var)
         if not value:
             raise ValueError(f"Missing required environment variable: {var}")
         config[var.lower()] = value
+    
+    # Validate and set default for scanner mode
+    scanner_mode = config.get('v1_file_scanner_mode', 'MOVE_ALL')
+    valid_modes = ['MOVE_ALL', 'MOVE_MALWARE_ONLY', 'TAG_ONLY']
+    
+    if scanner_mode not in valid_modes:
+        logger.warning(f"Invalid scanner mode '{scanner_mode}', falling back to 'MOVE_ALL'")
+        config['v1_file_scanner_mode'] = 'MOVE_ALL'
+        scanner_mode = 'MOVE_ALL'
+    else:
+        logger.info(f"Scanner mode set to: {scanner_mode}")
+    
+    # Get bucket configuration based on scanner mode
+    if scanner_mode == 'MOVE_ALL':
+        # Both production and quarantine buckets required
+        for bucket_var in ['PRODUCTION_BUCKET_NAME', 'QUARANTINE_BUCKET_NAME']:
+            value = os.environ.get(bucket_var)
+            if not value:
+                raise ValueError(f"Missing required environment variable for MOVE_ALL mode: {bucket_var}")
+            config[bucket_var.lower()] = value
+    
+    elif scanner_mode == 'MOVE_MALWARE_ONLY':
+        # Only quarantine bucket required
+        value = os.environ.get('QUARANTINE_BUCKET_NAME')
+        if not value:
+            raise ValueError(f"Missing required environment variable for MOVE_MALWARE_ONLY mode: QUARANTINE_BUCKET_NAME")
+        config['quarantine_bucket_name'] = value
+        
+        # Production bucket is optional
+        prod_value = os.environ.get('PRODUCTION_BUCKET_NAME')
+        if prod_value:
+            config['production_bucket_name'] = prod_value
+    
+    elif scanner_mode == 'TAG_ONLY':
+        # No additional buckets required, but get them if available for logging
+        for bucket_var in ['PRODUCTION_BUCKET_NAME', 'QUARANTINE_BUCKET_NAME']:
+            value = os.environ.get(bucket_var)
+            if value:
+                config[bucket_var.lower()] = value
     
     # Get sensitive configuration from OCI Vault
     for var in vault_vars:
@@ -305,6 +343,83 @@ def scan_file_with_vision_one(file_path: str, config: Dict[str, str]) -> Dict[st
         except:
             pass     
 
+def update_file_metadata_in_place(
+    client: oci.object_storage.ObjectStorageClient,
+    namespace: str,
+    bucket_name: str,
+    object_name: str,
+    scan_result: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Update file metadata/tags in-place without moving the file"""
+    
+    try:
+        # Get the original object content and details
+        get_object_response = client.get_object(
+            namespace_name=namespace,
+            bucket_name=bucket_name,
+            object_name=object_name
+        )
+        
+        # Get existing metadata
+        existing_meta = {}
+        try:
+            object_details = client.head_object(
+                namespace_name=namespace,
+                bucket_name=bucket_name,
+                object_name=object_name
+            )
+            existing_meta = object_details.headers.get('opc-meta-data', {})
+            if isinstance(existing_meta, str):
+                existing_meta = json.loads(existing_meta)
+        except:
+            existing_meta = {}
+
+        # Prepare scan result tags
+        scan_tags = {
+            "filescanned": "true",
+            "ismalwaredetected": str(scan_result['is_malware_detected']).lower(),
+            "scantimestamp": str(int(time.time())),
+            "scanid": scan_result.get('scan_id', ''),
+            "scannerversion": scan_result.get('scanner_version', '')
+        }
+
+        if scan_result['is_malware_detected']:
+            malware_names = ",".join([m.get('malwareName', '') for m in scan_result.get('found_malwares', [])])
+            scan_tags["malwarenames"] = malware_names[:200]  # Limit tag value
+
+        # Merge existing metadata with scan tags
+        updated_meta = {**existing_meta, **scan_tags}
+        
+        # Update the object in-place with new metadata
+        logger.info(f"Updating metadata for object {object_name} in bucket {bucket_name}")
+        
+        copy_response = client.put_object(
+            namespace_name=namespace,
+            bucket_name=bucket_name,
+            object_name=object_name,
+            put_object_body=get_object_response.data.content,
+            content_type=get_object_response.headers.get('content-type'),
+            opc_meta=updated_meta
+        )
+        
+        logger.info(f"Metadata successfully updated for object in {bucket_name}")
+        
+        return {
+            "action": "metadata_updated",
+            "bucket": bucket_name,
+            "object_name": object_name,
+            "scan_tags_added": scan_tags
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating metadata: {str(e)}")
+        return {
+            "action": "metadata_update_failed",
+            "bucket": bucket_name,
+            "object_name": object_name,
+            "error": str(e)
+        }
+
 def move_file_based_on_scan(
     client: oci.object_storage.ObjectStorageClient,
     namespace: str,
@@ -313,12 +428,61 @@ def move_file_based_on_scan(
     scan_result: Dict[str, Any],
     config: Dict[str, str]
 ) -> Dict[str, Any]:
-    """Move file to appropriate bucket and update tags based on scan results"""
+    """
+    Process file based on scan results and configured scanner mode.
+    
+    Modes:
+    - MOVE_ALL: Move both clean and infected files to appropriate buckets
+    - MOVE_MALWARE_ONLY: Only move infected files to quarantine, tag clean files in-place
+    - TAG_ONLY: Tag all files in-place without moving
+    """
     
     is_malware_detected = scan_result['is_malware_detected']
-    target_bucket = config['quarantine_bucket_name'] if is_malware_detected else config['production_bucket_name']
+    scanner_mode = config.get('v1_file_scanner_mode', 'MOVE_ALL')
     
-    logger.info(f"Moving file to {'quarantine' if is_malware_detected else 'production'} bucket: {target_bucket}")
+    logger.info(f"Processing file with scanner mode: {scanner_mode}")
+    logger.info(f"Malware detected: {is_malware_detected}")
+    
+    # MODE 1: TAG_ONLY - Always tag files in-place, never move
+    if scanner_mode == 'TAG_ONLY':
+        logger.info("TAG_ONLY mode: Updating file metadata in-place")
+        return update_file_metadata_in_place(
+            client, namespace, source_bucket, object_name, scan_result
+        )
+    
+    # MODE 2: MOVE_MALWARE_ONLY - Move only malware to quarantine, tag clean files in-place
+    elif scanner_mode == 'MOVE_MALWARE_ONLY':
+        if is_malware_detected:
+            logger.info("MOVE_MALWARE_ONLY mode: Moving infected file to quarantine")
+            return move_file_to_bucket(
+                client, namespace, source_bucket, object_name, 
+                config['quarantine_bucket_name'], scan_result, config
+            )
+        else:
+            logger.info("MOVE_MALWARE_ONLY mode: Clean file detected, updating metadata in-place")
+            return update_file_metadata_in_place(
+                client, namespace, source_bucket, object_name, scan_result
+            )
+    
+    # MODE 3: MOVE_ALL - Move all files to appropriate buckets (original behavior)
+    else:  # MOVE_ALL or any other value falls back to this mode
+        target_bucket = config['quarantine_bucket_name'] if is_malware_detected else config['production_bucket_name']
+        logger.info(f"MOVE_ALL mode: Moving file to {'quarantine' if is_malware_detected else 'production'} bucket: {target_bucket}")
+        return move_file_to_bucket(
+            client, namespace, source_bucket, object_name, 
+            target_bucket, scan_result, config
+        )
+
+def move_file_to_bucket(
+    client: oci.object_storage.ObjectStorageClient,
+    namespace: str,
+    source_bucket: str,
+    object_name: str,
+    target_bucket: str,
+    scan_result: Dict[str, Any],
+    config: Dict[str, str]
+) -> Dict[str, Any]:
+    """Move file from source bucket to target bucket with scan metadata"""
     
     try:
         # Get the original object
@@ -328,36 +492,40 @@ def move_file_based_on_scan(
             object_name=object_name
         )
         
-        # Get existing freeform tags from source object
-        existing_tags = {}
+        # Get existing metadata from source object
+        existing_meta = {}
         try:
             object_details = client.head_object(
                 namespace_name=namespace,
                 bucket_name=source_bucket,
                 object_name=object_name
             )
-            existing_tags = object_details.headers.get('opc-freeform-tags', {})
-            if isinstance(existing_tags, str):
-                existing_tags = json.loads(existing_tags)
+            existing_meta = object_details.headers.get('opc-meta-data', {})
+            if isinstance(existing_meta, str):
+                existing_meta = json.loads(existing_meta)
         except:
-            existing_tags = {}
+            existing_meta = {}
 
         # Prepare scan result tags
         scan_tags = {
-            "fileccanned": "true",
-            "ismalwaredetected": str(is_malware_detected).lower(),
+            "filescanned": "true",
+            "ismalwaredetected": str(scan_result['is_malware_detected']).lower(),
             "scantimestamp": str(int(time.time())),
             "scanid": scan_result.get('scan_id', ''),
-            "scannerversion": scan_result.get('scanner_version', '')
+            "scannerversion": scan_result.get('scanner_version', ''),
+            "originalbucket": source_bucket
         }
 
-        if is_malware_detected:
+        if scan_result['is_malware_detected']:
             malware_names = ",".join([m.get('malwareName', '') for m in scan_result.get('found_malwares', [])])
-            scan_tags["MalwareNames"] = malware_names[:200]  # Limit tag value
+            scan_tags["malwarenames"] = malware_names[:200]  # Limit tag value
+
+        # Merge existing metadata with scan tags
+        updated_meta = {**existing_meta, **scan_tags}
    
         try:
-            # Copy object to target bucket with  tags and metadata
-            logger.info(f"Copying object to target bucket: {target_bucket}")
+            # Copy object to target bucket with updated metadata
+            logger.info(f"Copying object from {source_bucket} to {target_bucket}")
             
             copy_response = client.put_object(
                 namespace_name=namespace,
@@ -365,28 +533,27 @@ def move_file_based_on_scan(
                 object_name=object_name,
                 put_object_body=get_object_response.data.content,
                 content_type=get_object_response.headers.get('content-type'),
-                opc_meta={
-                    **scan_tags,
-                    "originalbucket": source_bucket
-                }
+                opc_meta=updated_meta
             )
             
-            logger.info(f"Object successfully copied to target bucket - copy response: {copy_response.headers}")
+            logger.info(f"Object successfully copied to target bucket: {target_bucket}")
            
         except Exception as copy_error:
             logger.error(f"Error copying object: {str(copy_error)}")
 
             # Update source object with error information
+            error_meta = {**existing_meta, **{
+                "copy-error": str(copy_error)[:500],
+                "error-timestamp": str(int(time.time()))
+            }}
+            
             client.put_object(
                 namespace_name=namespace,
                 bucket_name=source_bucket,
                 object_name=object_name,
                 put_object_body=get_object_response.data.content,
                 content_type=get_object_response.headers.get('content-type'),
-                opc_meta={
-                    "copy-error": str(copy_error)[:500],
-                    "error-timestamp": str(int(time.time()))
-                }
+                opc_meta=error_meta
             )
             
             logger.info("Error details added to source object")
@@ -398,38 +565,53 @@ def move_file_based_on_scan(
                 "error": str(copy_error)
             }
         
-        logger.info(f"Deleting the object from the source bucket: {source_bucket} after successfully copying to the target bucket {target_bucket}")
-        # delete the object from the source bucket
+        # Delete the object from the source bucket after successful copy
+        logger.info(f"Deleting object from source bucket: {source_bucket}")
         delete_response = client.delete_object(
             namespace_name=namespace,
             bucket_name=source_bucket,
             object_name=object_name
         )
-        logger.info(f"Object successfully deleted from the source bucket: {delete_response.headers}")
+        logger.info(f"Object successfully deleted from source bucket")
+        
         return {
             "action": "moved",
             "source_bucket": source_bucket,
             "target_bucket": target_bucket,
             "object_name": object_name,
-            }
+            "scan_tags_added": scan_tags
+        }
         
     except Exception as e:
         logger.error(f"Error moving file: {str(e)}")
        
-        # Update source object with error information
-        client.put_object(
-            namespace_name=namespace,
-            bucket_name=source_bucket,
-            object_name=object_name,
-            put_object_body=get_object_response.data.content,
-            content_type=get_object_response.headers.get('content-type'),
-            opc_meta={
-                "copy-error": str(e)[:500],
+        try:
+            # Update source object with error information
+            error_meta = {
+                "move-error": str(e)[:500],
                 "error-timestamp": str(int(time.time()))
             }
-        )
+            
+            # Get existing content to preserve it
+            get_object_response = client.get_object(
+                namespace_name=namespace,
+                bucket_name=source_bucket,
+                object_name=object_name
+            )
+            
+            client.put_object(
+                namespace_name=namespace,
+                bucket_name=source_bucket,
+                object_name=object_name,
+                put_object_body=get_object_response.data.content,
+                content_type=get_object_response.headers.get('content-type'),
+                opc_meta=error_meta
+            )
+            
+            logger.info("Error details added to source object")
+        except Exception as error_update_exception:
+            logger.error(f"Failed to update source object with error details: {str(error_update_exception)}")
         
-        logger.info("Error details added to source object")
         return {
             "action": "move_failed",
             "source_bucket": source_bucket,

@@ -48,13 +48,15 @@ variable "source_bucket_name" {
 }
 
 variable "production_bucket_name" {
-  description = "Name of the existing production bucket for clean files"
+  description = "Name of the existing production bucket for clean files. Required only when v1_file_scanner_mode is 'MOVE_ALL'"
   type        = string
+  default     = ""
 }
 
 variable "quarantine_bucket_name" {
-  description = "Name of the existing quarantine bucket for files with malware"
+  description = "Name of the existing quarantine bucket for files with malware. Required when v1_file_scanner_mode is 'MOVE_ALL' or 'MOVE_MALWARE_ONLY'"
   type        = string
+  default     = ""
 }
 
 variable "vision_one_region" {
@@ -72,6 +74,18 @@ variable "vision_one_api_key_secret_ocid" {
   description = "Secret Id"
   type        = string
 }
+
+variable "v1_file_scanner_mode" {
+  description = "File scanner mode that controls file movement behavior. Valid values: MOVE_ALL (move both clean and malware files), MOVE_MALWARE_ONLY (move only malware files, retain clean files), TAG_ONLY (update tags only, don't move any files)"
+  type        = string
+  default     = "MOVE_ALL"
+  
+  validation {
+    condition = contains(["MOVE_ALL", "MOVE_MALWARE_ONLY", "TAG_ONLY"], var.v1_file_scanner_mode)
+    error_message = "File scanner mode must be one of: MOVE_ALL, MOVE_MALWARE_ONLY, TAG_ONLY."
+  }
+}
+
 
 # Function Configuration
 variable "function_image_name" {

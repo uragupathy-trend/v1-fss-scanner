@@ -14,24 +14,28 @@ vcn_id         = "ocid1.vcn.oc1.ap-sydney-1.aaaaaaaa..."
 subnet_id      = "ocid1.subnet.oc1.ap-sydney-1.aaaaaaaa..."
 
 # Existing Bucket Names
-source_bucket_name      = "v1-fss-source-bucket"
-production_bucket_name  = "v1-fss-prod-bucket"
-quarantine_bucket_name  = "v1-fss-quarantine-bucket"
+# Note: Bucket requirements depend on v1_file_scanner_mode setting below
+source_bucket_name      = "v1-fss-source-bucket"  # Required for all modes
+
+# Conditional bucket requirements based on scanner mode:
+# - MOVE_ALL: Requires production_bucket_name AND quarantine_bucket_name
+# - MOVE_MALWARE_ONLY: Requires quarantine_bucket_name only (leave production_bucket_name empty)
+# - TAG_ONLY: No additional buckets required (leave both empty)
+
+production_bucket_name  = "v1-fss-prod-bucket"    # Required only for MOVE_ALL mode
+quarantine_bucket_name  = "v1-fss-quarantine-bucket"  # Required for MOVE_ALL and MOVE_MALWARE_ONLY modes
+
+# Scanner Mode Configuration
+# Controls how files are processed after scanning:
+# - MOVE_ALL: Move clean files to production bucket, infected files to quarantine bucket (default)
+# - MOVE_MALWARE_ONLY: Move only infected files to quarantine bucket, keep clean files in source bucket
+# - TAG_ONLY: Tag all files with scan results but don't move any files
+v1_file_scanner_mode = "MOVE_ALL"
 
 # Vision One Configuration
-# Choose ONE of the following options:
-
-# Option 1: Using OCI Vault (Recommended for Production)
-use_vault = true
 vision_one_api_key_secret_ocid = "ocid1.vaultsecret.oc1.ap-sydney-1.aaaaaaaa..."
 vision_one_region = "ap-southeast-2"
-v1_scanner_endpoint = "https://api.xdr.trendmicro.com"
-
-# Option 2: Direct API Key (Development/Testing Only)
-# use_vault = false
-# vision_one_api_key = "your-vision-one-api-key-here"
-# vision_one_region = "ap-southeast-2"
-# v1_scanner_endpoint = "https://api.xdr.trendmicro.com"
+v1_scanner_endpoint = "<scanner-endpoint>:50051"
 
 # Function Configuration
 ocir_repo_name = "syd.ocir.io/your-tenancy-namespace/v1-fss-scanner"
