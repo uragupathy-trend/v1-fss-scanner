@@ -2,58 +2,45 @@
 # Copy this file to terraform.tfvars and fill in your actual values
 
 # OCI Authentication
-tenancy_ocid     = "ocid1.tenancy.oc1..aaaaaaaa..."
-user_ocid        = "ocid1.user.oc1..aaaaaaaa..."
-fingerprint      = "aa:bb:cc:dd:ee:ff:gg:hh:ii:jj:kk:ll:mm:nn:oo:pp"
-private_key_path = "~/.oci/oci_api_key.pem"
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaaaaaascaaa....q"
+user_ocid        = "ocid1.user.oc1..aaaaaaaam3sa...oq"
+fingerprint      = "07:32:eb:4f:5d:22:b0:3f:d7:73:c1:77:f9:1a:8c:22"
+private_key_path = "<oci_api_key.pem>"
 region           = "ap-sydney-1"
 
 # Compartment and Network
-compartment_id = "ocid1.compartment.oc1..aaaaaaaa..."
-vcn_id         = "ocid1.vcn.oc1.ap-sydney-1.aaaaaaaa..."
-subnet_id      = "ocid1.subnet.oc1.ap-sydney-1.aaaaaaaa..."
+compartment_id = "ocid1.tenancy.oc1..aaaaaaaascgq......"
+vcn_id         = "ocid1.vcn.oc1.ap-sydney-1.amaaaaaacvrx...."
+subnet_id      = "ocid1.subnet.oc1.ap-sydney-1.aaaaaaaayn.....a"
 
 # Existing Bucket Names
-# Note: Bucket requirements depend on v1_file_scanner_mode setting below
-source_bucket_name      = "v1-fss-source-bucket"  # Required for all modes
-
-# Conditional bucket requirements based on scanner mode:
-# - MOVE_ALL: Requires production_bucket_name AND quarantine_bucket_name
-# - MOVE_MALWARE_ONLY: Requires quarantine_bucket_name only (leave production_bucket_name empty)
-# - TAG_ONLY: No additional buckets required (leave both empty)
-
-production_bucket_name  = "v1-fss-prod-bucket"    # Required only for MOVE_ALL mode
-quarantine_bucket_name  = "v1-fss-quarantine-bucket"  # Required for MOVE_ALL and MOVE_MALWARE_ONLY modes
-
-# Scanner Mode Configuration
-# Controls how files are processed after scanning:
-# - MOVE_ALL: Move clean files to production bucket, infected files to quarantine bucket (default)
-# - MOVE_MALWARE_ONLY: Move only infected files to quarantine bucket, keep clean files in source bucket
-# - TAG_ONLY: Tag all files with scan results but don't move any files
-v1_file_scanner_mode = "MOVE_ALL"
+source_bucket_name      = "customer-scan-bucket"
+#production_bucket_name  = "customer-p-bucket"
+quarantine_bucket_name  = "customer-q-bucket"
 
 # Vision One Configuration
-vision_one_api_key_secret_ocid = "ocid1.vaultsecret.oc1.ap-sydney-1.aaaaaaaa..."
+#vision_one_api_key_secret_ocid = "ocid1.vaultsecret.oc1.ap-sydney-1.amaaaaaacvrxdpqaec....."
+vision_one_api_key_secret_ocid = "ocid1.vaultsecret.oc1.ap-sydney-1.amaaaaaacvrxdpqawg6jzfkrxzkx......"
 vision_one_region = "ap-southeast-2"
-v1_scanner_endpoint = "<scanner-endpoint>:50051"
+v1_scanner_endpoint = "<IP>:50051"
 
-# Function Configuration
-ocir_repo_name = "syd.ocir.io/your-tenancy-namespace/v1-fss-scanner"
+# File Scanner Mode Configuration
+# Valid values: MOVE_ALL, MOVE_MALWARE_ONLY, TAG_ONLY
+v1_file_scanner_mode = "MOVE_MALWARE_ONLY"
 
-# Docker/OCIR Configuration
-docker_username = "your-tenancy-namespace/your-oci-username"
-docker_auth_token = "your-oci-auth-token"
+# Docker/OCIR Configuration sd7x6bmp43j1
+docker_username = "docker_username"
+docker_auth_token = "docker_auth_token"
+tenancy_namespace = "tenancy_namespace"
 ocir_region = "syd.ocir.io"
 image_tag = "latest"
-tenancy_namespace = "your-tenancy-namespace"
 
-# Function Context Configuration
-fn_context_name = "v1-fss-context"
-environment    = "dev"
-
-# Logging Configuration (set to false if you don't have logging permissions)
-enable_logging = false
+# Environment Configuration
+environment = "dev"
 
 # Optional: Function Resource Configuration
 function_memory_mb       = 512
 function_timeout_seconds = 300
+
+# Logging Configuration (set to false if you don't have logging permissions)
+enable_logging = true
