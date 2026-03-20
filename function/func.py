@@ -325,12 +325,18 @@ def scan_file_with_vision_one(file_path: str, config: Dict[str, str]) -> Dict[st
         else:
             logger.error("No 'atse' result found in scan data")
         
+        engine_version = atse_result.get('version', {}).get('engine', '')
+        lptvpn_version = atse_result.get('version', {}).get('lptvpn', '')
+        pattern_version = f"{engine_version}-{lptvpn_version}"
+        logger.info(f"Engine Version: {engine_version}")
+        logger.info(f"LPTVPN Version: {lptvpn_version}")
+        logger.info(f"Pattern Version: {pattern_version}")
         return {
             "is_malware_detected": is_malware_detected,
             "scan_id": scan_data.get('scanId'),
             "file_sha256": scan_data.get('fileSHA256'),
-            "scanner_version": scan_data.get('scannerVersion'),
-            "elapsed_time": elapsed_time,
+            "scanner_version": pattern_version,
+            "elapsed_time": elapsed_time
         }
         
     except Exception as e:
@@ -378,7 +384,7 @@ def update_file_metadata_in_place(
         scan_tags = {
             "filescanned": "true",
             "ismalwaredetected": str(scan_result['is_malware_detected']).lower(),
-            "scantimestamp": str(int(time.time())),
+            "realtime_scantimestamp": str(int(time.time())),
             "scanid": scan_result.get('scan_id', ''),
             "scannerversion": scan_result.get('scanner_version', '')
         }
